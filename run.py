@@ -3,6 +3,7 @@
 
 使用方法:
     python run.py               # 启动开发服务器 (带热重载)
+    python run.py --debug       # 调试模式 (支持 IDE 断点调试)
     python run.py --prod        # 生产模式启动 (无热重载)
     python run.py --port 8080   # 指定端口
     python run.py --host 0.0.0.0 # 指定监听地址
@@ -45,6 +46,11 @@ def main():
         help="生产模式 (禁用热重载和自动调试)",
     )
     parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="调试模式 (禁用热重载, 支持 IDE 断点调试)",
+    )
+    parser.add_argument(
         "--workers",
         type=int,
         default=1,
@@ -65,6 +71,18 @@ def main():
             port=args.port,
             workers=args.workers,
             log_level="info",
+        )
+    elif args.debug:
+        # 调试模式 (支持 IDE 断点)
+        from app.main import app
+        logging.info("🐛 启动调试模式服务器 (支持断点调试)")
+        logging.info(f"📍 服务地址: http://{args.host}:{args.port}")
+        logging.info(f"📚 API文档: http://{args.host}:{args.port}/docs")
+        uvicorn.run(
+            app,
+            host=args.host,
+            port=args.port,
+            log_level="debug",
         )
     else:
         # 开发模式 (带热重载)
