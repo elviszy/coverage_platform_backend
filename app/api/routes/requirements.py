@@ -381,6 +381,23 @@ def _run_confluence_import_job(job_id: str, payload: dict) -> None:
                             )
                             db.commit()
                             imported_attachments += 1
+                            
+                            # RAG 附件处理：将附件纳入知识图谱
+                            try:
+                                import asyncio
+                                from app.services.rag_service import get_rag_service
+                                
+                                rag_service = get_rag_service()
+                                
+                                async def process_att():
+                                    await rag_service.initialize()
+                                    await rag_service.process_attachment(str(file_path))
+                                
+                                asyncio.get_event_loop().run_until_complete(process_att())
+                            except Exception as rag_err:
+                                # RAG 处理失败不影响主导入流程
+                                print(f"[confluence_import] RAG 附件处理警告: {rag_err}")
+                                
                         except Exception as e:
                             db.rollback()
                             errors.append(f"attachment_{current_id}:{a.attachment_id}:{e}")
@@ -600,6 +617,41 @@ def _run_requirements_index_job(job_id: str, payload: dict) -> None:
                 progress=min(0.99, float(progress)),
                 result={"message": "索引进行中", "indexed_rows": total_rows, "processed_pages": idx, "total_pages": len(pages)},
             )
+
+        # 集成 RAG 知识图谱：将索引的内容同步插入知识图谱
+        try:
+            import asyncio
+            from app.services.rag_service import get_rag_service
+            
+            rag_service = get_rag_service()
+            
+            async def sync_to_rag():
+                await rag_service.initialize()
+                # 查询刚索引的验收标准
+                criteria_rows = db.execute(
+                    text(
+                        """
+                        SELECT criterion_id, normalized_text, path, table_title
+                        FROM coverage_platform.requirements_criteria
+                        WHERE is_active = true
+                        """
+                    )
+                ).mappings().all()
+                
+                for cr in criteria_rows:
+                    await rag_service.insert_requirement(
+                        text=cr["normalized_text"],
+                        metadata={
+                            "criterion_id": cr["criterion_id"],
+                            "path": cr["path"],
+                            "table_title": cr["table_title"],
+                        }
+                    )
+            
+            asyncio.get_event_loop().run_until_complete(sync_to_rag())
+        except Exception as rag_err:
+            # RAG 同步失败不影响主流程
+            print(f"[requirements/index] RAG 同步警告: {rag_err}")
 
         mark_succeeded(db, job_id, {"message": "索引完成", "indexed_rows": total_rows})
     except Exception as e:

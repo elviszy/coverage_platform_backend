@@ -47,6 +47,20 @@ class Settings(BaseSettings):
     llm_max_verify_per_scenario: int = 5
     llm_max_total_verify_per_run: int = 500
 
+    # RAG-Anything 配置
+    # ---
+    rag_working_dir: str = "./rag_storage"
+    rag_enable_graph: bool = True
+    rag_query_mode: str = "hybrid"  # hybrid, local, global, naive
+    
+    # RAG 存储后端（使用 PostgreSQL）
+    rag_use_postgres: bool = True
+    
+    # 附件处理配置
+    rag_enable_attachment_processing: bool = True
+    rag_attachment_output_dir: str = "./attachment_output"
+    rag_supported_attachment_extensions: str = ".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg"
+
 
 @lru_cache
 def get_settings() -> Settings:

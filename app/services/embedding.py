@@ -37,9 +37,19 @@ def embed_text(text: str) -> List[float]:
     """对文本生成 embedding。
 
     策略：
-    - 若配置了 OpenAI API Key，则优先调用 OpenAI embedding。
+    - 优先使用 RAG-Anything 服务的统一 Embedding。
+    - 若 RAG 服务不可用，则调用 OpenAI embedding。
     - 否则退化为伪向量。
     """
+
+    # 尝试使用 RAG 服务
+    try:
+        from app.services.rag_service import get_rag_service
+        rag_service = get_rag_service()
+        if rag_service.is_initialized:
+            return rag_service.get_embedding(text)
+    except Exception:
+        pass  # RAG 服务不可用，继续使用原有方式
 
     if settings.openai_api_key:
         # 延迟导入，避免未安装 openai 时影响本地开发（尽管 requirements 已包含）

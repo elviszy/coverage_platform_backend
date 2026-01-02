@@ -15,6 +15,74 @@ from app.services.llm_verifier import verify_coverage_with_llm
 settings = get_settings()
 
 
+# ========== RAG 知识图谱增强检索 ==========
+
+async def _search_with_knowledge_graph(scenario_text: str, top_k: int = 10) -> list:
+    """使用 RAG 知识图谱进行增强语义检索
+    
+    Args:
+        scenario_text: 测试场景文本
+        top_k: 返回结果数量
+        
+    Returns:
+        list: 从知识图谱检索到的相关需求
+    """
+    try:
+        from app.services.rag_service import get_rag_service
+        
+        rag_service = get_rag_service()
+        if not rag_service.is_initialized:
+            await rag_service.initialize()
+        
+        results = await rag_service.find_related_requirements(scenario_text, top_k=top_k)
+        return results
+    except Exception as e:
+        print(f"[review_engine] 知识图谱检索警告: {e}")
+        return []
+
+
+def _merge_search_results(
+    vector_results: list, 
+    graph_results: list, 
+    vector_weight: float = 0.6,
+    graph_weight: float = 0.4
+) -> list:
+    """融合向量检索和图谱检索结果
+    
+    Args:
+        vector_results: 向量检索结果
+        graph_results: 图谱检索结果
+        vector_weight: 向量结果权重
+        graph_weight: 图谱结果权重
+        
+    Returns:
+        list: 融合后的结果
+    """
+    # 创建结果字典用于去重和融合
+    merged = {}
+    
+    # 添加向量检索结果
+    for r in vector_results:
+        cid = r.get("criterion_id")
+        if cid:
+            score = float(r.get("score", 0)) * vector_weight
+            merged[cid] = {**r, "score": score, "source": "vector"}
+    
+    # 融合图谱检索结果
+    for r in graph_results:
+        cid = r.get("criterion_id")
+        if cid:
+            if cid in merged:
+                # 已存在，增加分数
+                merged[cid]["score"] += graph_weight
+                merged[cid]["source"] = "hybrid"
+            else:
+                merged[cid] = {**r, "score": graph_weight, "source": "graph"}
+    
+    # 按分数排序返回
+    return sorted(merged.values(), key=lambda x: x.get("score", 0), reverse=True)
+
+
 @dataclass
 class CoverageLinkDraft:
     scenario_id: str

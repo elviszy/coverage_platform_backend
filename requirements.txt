@@ -12,3 +12,8 @@ SQLAlchemy>=2.0
 psycopg[binary]>=3.1
 pgvector>=0.3.6
 openai>=1.40
+
+# RAG-Anything 集成
+raganything>=1.2.8
+lightrag-hku>=1.0.0
+asyncpg>=0.29.0
