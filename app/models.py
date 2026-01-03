@@ -206,3 +206,141 @@ class Job(Base):
 
     result: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     error: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+
+# ==================== 公共测试用例覆盖度分析 ====================
+
+
+class PublicTestCriterion(Base):
+    """公共测试标准（知识库）。
+    
+    存储通用测试点，如「增删改」「审核」「查询」等类型的标准测试点。
+    用于与 XMind 测试用例进行覆盖度匹配。
+    """
+
+    __tablename__ = "public_test_criteria"
+    __table_args__ = {"schema": DB_SCHEMA}
+
+    # 主键：使用 category + test_point 的哈希生成
+    criterion_id: Mapped[str] = mapped_column(String, primary_key=True)
+    
+    # 测试点分类（如：增删改、审核、查询、校验、导入、数值等）
+    category: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    
+    # 测试点名称（如：正常情况、无效数据、双开对相同数据进行操作等）
+    test_point: Mapped[str] = mapped_column(String(500), nullable=False)
+    
+    # 测试内容详细描述
+    test_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    
+    # 规范化文本（用于生成 Embedding，格式：类型|测试点|测试内容）
+    normalized_text: Mapped[str] = mapped_column(Text, nullable=False)
+    
+    # 关键词列表（用于双重校验匹配）
+    keywords: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    
+    # 向量嵌入
+    embedding: Mapped[list | None] = mapped_column(Vector(settings.embedding_dim), nullable=True)
+    
+    # 状态
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    
+    # 时间戳
+    created_at: Mapped[str] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[str] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class CoverageAnalysisRun(Base):
+    """覆盖度分析任务。
+    
+    记录一次公共测试用例覆盖度分析的配置和状态。
+    """
+
+    __tablename__ = "coverage_analysis_runs"
+    __table_args__ = {"schema": DB_SCHEMA}
+
+    # 主键
+    run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    # 关联的 XMind 来源
+    xmind_source_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), 
+        ForeignKey(f"{DB_SCHEMA}.tests_sources.source_id", ondelete="CASCADE"), 
+        nullable=False
+    )
+    
+    # 关联的需求页面 ID 列表（可选）
+    requirements_page_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    
+    # 任务状态：pending / running / completed / failed
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending")
+    
+    # 分析配置（阈值、LLM 配置等）
+    config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    
+    # 汇总结果（覆盖率、按类型统计等）
+    summary: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    
+    # 时间戳
+    created_at: Mapped[str] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    finished_at: Mapped[str | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # 关联关系
+    results: Mapped[list["CoverageAnalysisResult"]] = relationship(
+        back_populates="run",
+        cascade="all, delete-orphan",
+    )
+
+
+class CoverageAnalysisResult(Base):
+    """覆盖度分析结果详情。
+    
+    每个公共测试标准对应一条记录，存储匹配状态和详情。
+    """
+
+    __tablename__ = "coverage_analysis_results"
+    __table_args__ = {"schema": DB_SCHEMA}
+
+    # 主键
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    # 关联的分析任务
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), 
+        ForeignKey(f"{DB_SCHEMA}.coverage_analysis_runs.run_id", ondelete="CASCADE"), 
+        nullable=False
+    )
+    
+    # 关联的公共测试标准
+    criterion_id: Mapped[str] = mapped_column(
+        String, 
+        ForeignKey(f"{DB_SCHEMA}.public_test_criteria.criterion_id", ondelete="CASCADE"), 
+        nullable=False
+    )
+    
+    # 覆盖状态：covered / partial / missed
+    status: Mapped[str] = mapped_column(String(50), nullable=False)
+    
+    # 最高匹配分数
+    best_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    
+    # 匹配的关键词列表
+    matched_keywords: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    
+    # 匹配的场景列表（包含 scenario_id, title, path, score 等）
+    matched_scenarios: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    
+    # 关联的需求点列表（包含 page_id, text, score 等）
+    matched_requirements: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    
+    # LLM 验证相关
+    llm_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    llm_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    llm_suggestion: Mapped[str | None] = mapped_column(Text, nullable=True)
+    
+    # 时间戳
+    created_at: Mapped[str] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    # 关联关系
+    run: Mapped[CoverageAnalysisRun] = relationship(back_populates="results")
+

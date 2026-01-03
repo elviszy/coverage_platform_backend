@@ -33,6 +33,7 @@ from app.services.confluence import (
     fetch_page_by_id,
 )
 from app.services.requirements_parser import parse_storage_to_criteria
+from app.services.feature_extractor import extract_feature_points
 
 
 router = APIRouter()
@@ -94,7 +95,7 @@ def _run_requirements_text_import_job(job_id: str, payload: dict) -> None:
             text(
                 """
                 INSERT INTO coverage_platform.requirements_pages(page_id, page_url, title, version, body_storage, path, labels)
-                VALUES (:page_id, :page_url, :title, :version, :body_storage, :path, :labels::jsonb)
+                VALUES (:page_id, :page_url, :title, :version, :body_storage, :path, CAST(:labels AS jsonb))
                 ON CONFLICT (page_id)
                 DO UPDATE SET
                   page_url = EXCLUDED.page_url,
@@ -202,7 +203,7 @@ def _run_requirements_docx_import_job(job_id: str, meta: dict, raw: bytes) -> No
             text(
                 """
                 INSERT INTO coverage_platform.requirements_pages(page_id, page_url, title, version, body_storage, path, labels)
-                VALUES (:page_id, :page_url, :title, :version, :body_storage, :path, :labels::jsonb)
+                VALUES (:page_id, :page_url, :title, :version, :body_storage, :path, CAST(:labels AS jsonb))
                 ON CONFLICT (page_id)
                 DO UPDATE SET
                   page_url = EXCLUDED.page_url,
@@ -296,7 +297,7 @@ def _run_confluence_import_job(job_id: str, payload: dict) -> None:
                 text(
                     """
                     INSERT INTO coverage_platform.requirements_pages(page_id, page_url, title, version, body_storage, path, labels)
-                    VALUES (:page_id, :page_url, :title, :version, :body_storage, :path, :labels::jsonb)
+                    VALUES (:page_id, :page_url, :title, :version, :body_storage, :path, CAST(:labels AS jsonb))
                     ON CONFLICT (page_id)
                     DO UPDATE SET
                       page_url = EXCLUDED.page_url,
@@ -564,16 +565,19 @@ def _run_requirements_index_job(job_id: str, payload: dict) -> None:
 
             for r in rows:
                 emb = embed_text(r.normalized_text)
+                # 提取需求点/功能点（返回 Markdown 文本）
+                feature_points_md = extract_feature_points(r.normalized_text)
+                
                 db.execute(
                     text(
                         """
                         INSERT INTO coverage_platform.requirements_criteria(
                           criterion_id, page_id, page_version, page_url, title, path,
-                          table_idx, row_idx, table_title, headers, row_data, normalized_text, embedding, is_active
+                          table_idx, row_idx, table_title, headers, row_data, normalized_text, embedding, is_active, feature_points
                         )
                         VALUES(
                           :criterion_id, :page_id, :page_version, :page_url, :title, :path,
-                          :table_idx, :row_idx, :table_title, :headers::jsonb, :row_data::jsonb, :normalized_text, :embedding, true
+                          :table_idx, :row_idx, :table_title, CAST(:headers AS jsonb), CAST(:row_data AS jsonb), :normalized_text, :embedding, true, :feature_points
                         )
                         ON CONFLICT (criterion_id)
                         DO UPDATE SET
@@ -586,7 +590,8 @@ def _run_requirements_index_job(job_id: str, payload: dict) -> None:
                           row_data = EXCLUDED.row_data,
                           normalized_text = EXCLUDED.normalized_text,
                           embedding = EXCLUDED.embedding,
-                          is_active = true
+                          is_active = true,
+                          feature_points = EXCLUDED.feature_points
                         """
                     ),
                     {
@@ -603,6 +608,7 @@ def _run_requirements_index_job(job_id: str, payload: dict) -> None:
                         "row_data": __import__("json").dumps(r.row_data, ensure_ascii=False),
                         "normalized_text": r.normalized_text,
                         "embedding": emb,
+                        "feature_points": feature_points_md,
                     },
                 )
                 total_rows += 1
@@ -669,13 +675,15 @@ def search_requirements(payload: RequirementsSearchRequest, db: Session = Depend
     """检索需求知识库（pgvector）。"""
 
     query_vec = embed_text(payload.query_text)
+    # 将向量转换为 PostgreSQL vector 格式字符串
+    vec_str = "[" + ",".join(str(x) for x in query_vec) + "]"
 
     # 说明：
     # - 使用 pgvector 的 cosine distance：embedding <=> query_vec
     # - 相似度 = 1 - distance
     # - 这里用原生 SQL，避免不同 SQLAlchemy/pgvector 版本差异导致的兼容问题
     filters_sql = "WHERE is_active = true"
-    params = {"q": query_vec, "k": payload.top_k}
+    params = {"q": vec_str, "k": payload.top_k}
 
     if payload.filters:
         if payload.filters.only_active is False:
@@ -691,11 +699,11 @@ def search_requirements(payload: RequirementsSearchRequest, db: Session = Depend
         f"""
         SELECT
           criterion_id, page_id, page_url, page_version, path, table_idx, row_idx,
-          table_title, headers, row_data, normalized_text, is_active,
-          (1 - (embedding <=> :q)) AS score
+          table_title, headers, row_data, normalized_text, is_active, feature_points,
+          (1 - (embedding <=> CAST(:q AS vector))) AS score
         FROM coverage_platform.requirements_criteria
         {filters_sql}
-        ORDER BY embedding <=> :q
+        ORDER BY embedding <=> CAST(:q AS vector)
         LIMIT :k
         """
     )
@@ -704,6 +712,10 @@ def search_requirements(payload: RequirementsSearchRequest, db: Session = Depend
 
     items: List[RequirementsSearchItem] = []
     for r in rows:
+        # feature_points 现在是 Markdown 字符串
+        fp = r.get("feature_points")
+        feature_points = fp if isinstance(fp, str) else ""
+        
         criterion = RequirementCriterion(
             criterion_id=r["criterion_id"],
             page_id=r["page_id"],
@@ -717,6 +729,7 @@ def search_requirements(payload: RequirementsSearchRequest, db: Session = Depend
             row=r["row_data"] if isinstance(r["row_data"], dict) else {},
             normalized_text=r["normalized_text"],
             is_active=r["is_active"],
+            feature_points=feature_points,
         )
         items.append(RequirementsSearchItem(criterion=criterion, score=float(r["score"])))
 
@@ -751,3 +764,32 @@ def get_criterion(criterion_id: str, db: Session = Depends(db_session)):
         normalized_text=r["normalized_text"],
         is_active=r["is_active"],
     )
+
+
+@router.get("/requirements/pages")
+def list_requirements_pages(db: Session = Depends(db_session)):
+    """获取所有已导入的需求页面列表。"""
+    rows = db.execute(
+        text(
+            """
+            SELECT page_id, page_url, title, version, path, fetched_at
+            FROM coverage_platform.requirements_pages
+            ORDER BY fetched_at DESC
+            """
+        )
+    ).mappings().all()
+    
+    items = [
+        {
+            "page_id": r["page_id"],
+            "page_url": r["page_url"],
+            "title": r["title"],
+            "version": r["version"],
+            "path": r["path"],
+            "fetched_at": str(r["fetched_at"]),
+        }
+        for r in rows
+    ]
+    
+    return {"items": items, "total": len(items)}
+

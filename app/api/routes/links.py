@@ -31,7 +31,7 @@ def confirm_link(payload: LinkConfirmRequest, db: Session = Depends(db_session))
             """
             UPDATE coverage_platform.kb_links
             SET status = :status,
-                evidence = jsonb_set(evidence, '{manual_review}', to_jsonb(:comment::text), true),
+                evidence = jsonb_set(evidence, '{manual_review}', to_jsonb(CAST(:comment AS text)), true),
                 updated_at = now()
             WHERE link_id = :id
             """

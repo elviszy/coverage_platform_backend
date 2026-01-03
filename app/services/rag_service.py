@@ -50,7 +50,7 @@ class RAGService:
             return True
 
         try:
-            from raganything import RAGAnything, RAGAnythingConfig
+            from app.raganything import RAGAnything, RAGAnythingConfig
             from lightrag.llm.openai import openai_complete_if_cache, openai_embed
             from lightrag.utils import EmbeddingFunc
 

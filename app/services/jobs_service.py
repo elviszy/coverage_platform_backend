@@ -16,7 +16,7 @@ def create_job(db: Session, job_type: str) -> str:
         text(
             """
             INSERT INTO coverage_platform.jobs(job_id, type, status, progress, result, error)
-            VALUES (:job_id::uuid, :type, 'running', 0, '{}'::jsonb, NULL)
+            VALUES (CAST(:job_id AS uuid), :type, 'running', 0, '{}'::jsonb, NULL)
             """
         ),
         {"job_id": job_id, "type": job_type},
@@ -48,11 +48,11 @@ def update_job(
         params["progress"] = progress
 
     if result is not None:
-        sets.append("result = :result::jsonb")
+        sets.append("result = CAST(:result AS jsonb)")
         params["result"] = json.dumps(result, ensure_ascii=False)
 
     if error is not None:
-        sets.append("error = :error::jsonb")
+        sets.append("error = CAST(:error AS jsonb)")
         params["error"] = json.dumps(error, ensure_ascii=False)
 
     db.execute(
@@ -60,7 +60,7 @@ def update_job(
             f"""
             UPDATE coverage_platform.jobs
             SET {', '.join(sets)}
-            WHERE job_id = :job_id::uuid
+            WHERE job_id = CAST(:job_id AS uuid)
             """
         ),
         params,
@@ -91,7 +91,7 @@ def get_job(db: Session, job_id: str) -> Optional[Dict[str, Any]]:
                    to_char(updated_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at,
                    result, error
             FROM coverage_platform.jobs
-            WHERE job_id = :job_id::uuid
+            WHERE job_id = CAST(:job_id AS uuid)
             """
         ),
         {"job_id": job_id},

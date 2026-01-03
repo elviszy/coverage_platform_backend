@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS requirements_criteria (
   normalized_text    TEXT NOT NULL,
   embedding          VECTOR(1536) NOT NULL,
   is_active          BOOLEAN NOT NULL DEFAULT TRUE,
+  feature_points     TEXT NOT NULL DEFAULT '',  -- LLM 提取的需求点/功能点（Markdown 格式）
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -186,3 +187,69 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at DESC);
+
+
+-- ==================== 公共测试用例覆盖度分析 ====================
+
+-- 公共测试标准（知识库）
+CREATE TABLE IF NOT EXISTS public_test_criteria (
+  criterion_id       TEXT PRIMARY KEY,
+  category           VARCHAR(100) NOT NULL,
+  test_point         VARCHAR(500) NOT NULL,
+  test_content       TEXT,
+  normalized_text    TEXT NOT NULL,
+  keywords           JSONB NOT NULL DEFAULT '[]'::jsonb,
+  embedding          VECTOR(1536),
+  is_active          BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_public_test_criteria_category ON public_test_criteria(category);
+CREATE INDEX IF NOT EXISTS idx_public_test_criteria_active ON public_test_criteria(is_active);
+
+DO $$
+BEGIN
+  EXECUTE 'CREATE INDEX IF NOT EXISTS idx_public_test_criteria_embedding_hnsw ON public_test_criteria USING hnsw (embedding vector_cosine_ops)';
+EXCEPTION
+  WHEN OTHERS THEN
+    RAISE NOTICE 'skip idx_public_test_criteria_embedding_hnsw: %', SQLERRM;
+END
+$$;
+
+-- 覆盖度分析任务
+CREATE TABLE IF NOT EXISTS coverage_analysis_runs (
+  run_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  xmind_source_id    UUID NOT NULL REFERENCES tests_sources(source_id) ON DELETE CASCADE,
+  requirements_page_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+  status             VARCHAR(50) NOT NULL DEFAULT 'pending',
+  config             JSONB NOT NULL DEFAULT '{}'::jsonb,
+  summary            JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  finished_at        TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_coverage_analysis_runs_source ON coverage_analysis_runs(xmind_source_id);
+CREATE INDEX IF NOT EXISTS idx_coverage_analysis_runs_status ON coverage_analysis_runs(status);
+CREATE INDEX IF NOT EXISTS idx_coverage_analysis_runs_created_at ON coverage_analysis_runs(created_at DESC);
+
+-- 覆盖度分析结果详情
+CREATE TABLE IF NOT EXISTS coverage_analysis_results (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  run_id             UUID NOT NULL REFERENCES coverage_analysis_runs(run_id) ON DELETE CASCADE,
+  criterion_id       TEXT NOT NULL REFERENCES public_test_criteria(criterion_id) ON DELETE CASCADE,
+  status             VARCHAR(50) NOT NULL,
+  best_score         DOUBLE PRECISION NOT NULL DEFAULT 0,
+  matched_keywords   JSONB NOT NULL DEFAULT '[]'::jsonb,
+  matched_scenarios  JSONB NOT NULL DEFAULT '[]'::jsonb,
+  matched_requirements JSONB NOT NULL DEFAULT '[]'::jsonb,
+  llm_verified       BOOLEAN NOT NULL DEFAULT FALSE,
+  llm_reason         TEXT,
+  llm_suggestion     TEXT,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_coverage_analysis_results_run ON coverage_analysis_results(run_id);
+CREATE INDEX IF NOT EXISTS idx_coverage_analysis_results_criterion ON coverage_analysis_results(criterion_id);
+CREATE INDEX IF NOT EXISTS idx_coverage_analysis_results_status ON coverage_analysis_results(status);
+

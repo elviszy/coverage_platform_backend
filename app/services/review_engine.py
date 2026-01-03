@@ -200,7 +200,7 @@ def _iter_scenarios(db: Session, tests_scope: dict) -> Iterable[Dict[str, Any]]:
 
     source_ids = tests_scope.get("source_ids")
     if isinstance(source_ids, list) and source_ids:
-        where += " AND source_id = ANY(:source_ids::uuid[])"
+        where += " AND source_id = ANY(CAST(:source_ids AS uuid[]))"
         params["source_ids"] = source_ids
 
     path_prefix = tests_scope.get("path_prefix")
@@ -224,8 +224,11 @@ def _iter_scenarios(db: Session, tests_scope: dict) -> Iterable[Dict[str, Any]]:
 
 
 def _search_criteria(db: Session, query_vec: list, req_scope: dict, top_k: int) -> List[Dict[str, Any]]:
+    # 将向量转换为 PostgreSQL vector 格式字符串
+    vec_str = "[" + ",".join(str(x) for x in query_vec) + "]"
+    
     where = "WHERE is_active = true"
-    params: Dict[str, Any] = {"q": query_vec, "k": top_k}
+    params: Dict[str, Any] = {"q": vec_str, "k": top_k}
 
     page_ids = req_scope.get("page_ids")
     if isinstance(page_ids, list) and page_ids:
@@ -239,10 +242,10 @@ def _search_criteria(db: Session, query_vec: list, req_scope: dict, top_k: int) 
 
     sql = text(
         f"""
-        SELECT criterion_id, normalized_text, (1 - (embedding <=> :q)) AS score
+        SELECT criterion_id, normalized_text, (1 - (embedding <=> CAST(:q AS vector))) AS score
         FROM coverage_platform.requirements_criteria
         {where}
-        ORDER BY embedding <=> :q
+        ORDER BY embedding <=> CAST(:q AS vector)
         LIMIT :k
         """
     )

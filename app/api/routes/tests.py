@@ -69,7 +69,7 @@ def _run_xmind_import_job(job_id: str, raw: bytes, file_name: str, file_hash: st
             text(
                 """
                 INSERT INTO coverage_platform.tests_sources(source_id, source_type, file_name, file_hash)
-                VALUES (:source_id::uuid, 'xmind', :file_name, :file_hash)
+                VALUES (CAST(:source_id AS uuid), 'xmind', :file_name, :file_hash)
                 ON CONFLICT (file_hash)
                 DO UPDATE SET file_name = EXCLUDED.file_name
                 RETURNING source_id::text AS source_id
@@ -116,7 +116,7 @@ def _run_xmind_import_job(job_id: str, raw: bytes, file_name: str, file_hash: st
                       scenario_id, source_id, title, path, notes, context_text, embedding
                     )
                     VALUES(
-                      :scenario_id, :source_id::uuid, :title, :path, :notes, :context_text, :embedding
+                      :scenario_id, CAST(:source_id AS uuid), :title, :path, :notes, :context_text, :embedding
                     )
                     ON CONFLICT (scenario_id)
                     DO UPDATE SET
@@ -169,13 +169,15 @@ def _run_xmind_import_job(job_id: str, raw: bytes, file_name: str, file_hash: st
 @router.post("/tests/search", response_model=TestsSearchResponse)
 def search_tests(payload: TestsSearchRequest, db: Session = Depends(db_session)):
     query_vec = embed_text(payload.query_text)
+    # 将向量转换为 PostgreSQL vector 格式字符串
+    vec_str = "[" + ",".join(str(x) for x in query_vec) + "]"
 
     filters_sql = "WHERE 1=1"
-    params = {"q": query_vec, "k": payload.top_k}
+    params = {"q": vec_str, "k": payload.top_k}
 
     if payload.filters:
         if payload.filters.source_ids:
-            filters_sql += " AND source_id = ANY(:source_ids::uuid[])"
+            filters_sql += " AND source_id = ANY(CAST(:source_ids AS uuid[]))"
             params["source_ids"] = payload.filters.source_ids
         if payload.filters.path_prefix:
             filters_sql += " AND path LIKE :path_prefix"
@@ -184,10 +186,10 @@ def search_tests(payload: TestsSearchRequest, db: Session = Depends(db_session))
     sql = text(
         f"""
         SELECT scenario_id, source_id::text AS source_id, title, path, notes, context_text,
-               (1 - (embedding <=> :q)) AS score
+               (1 - (embedding <=> CAST(:q AS vector))) AS score
         FROM coverage_platform.tests_scenarios
         {filters_sql}
-        ORDER BY embedding <=> :q
+        ORDER BY embedding <=> CAST(:q AS vector)
         LIMIT :k
         """
     )
@@ -233,3 +235,31 @@ def get_scenario(scenario_id: str, db: Session = Depends(db_session)):
         notes=r["notes"],
         context_text=r["context_text"],
     )
+
+
+@router.get("/tests/sources")
+def list_test_sources(db: Session = Depends(db_session)):
+    """获取所有已导入的 XMind 来源列表。"""
+    rows = db.execute(
+        text(
+            """
+            SELECT source_id::text AS source_id, source_type, file_name, file_hash, imported_at
+            FROM coverage_platform.tests_sources
+            ORDER BY imported_at DESC
+            """
+        )
+    ).mappings().all()
+    
+    items = [
+        {
+            "source_id": r["source_id"],
+            "source_type": r["source_type"],
+            "file_name": r["file_name"],
+            "file_hash": r["file_hash"],
+            "imported_at": str(r["imported_at"]),
+        }
+        for r in rows
+    ]
+    
+    return {"items": items, "total": len(items)}
+

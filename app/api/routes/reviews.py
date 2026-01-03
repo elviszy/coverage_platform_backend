@@ -80,7 +80,7 @@ def create_review_run(payload: ReviewRunRequest, background_tasks: BackgroundTas
         text(
             """
             INSERT INTO coverage_platform.review_runs(run_id, status, requirements_scope, tests_scope, config)
-            VALUES (:run_id::uuid, 'running', :req_scope::jsonb, :test_scope::jsonb, :config::jsonb)
+            VALUES (CAST(:run_id AS uuid), 'running', CAST(:req_scope AS jsonb), CAST(:test_scope AS jsonb), CAST(:config AS jsonb))
             """
         ),
         {
@@ -127,8 +127,8 @@ def _run_review_job(job_id: str, run_id: str, payload_dict: Dict[str, Any]) -> N
                       verifier_used, verifier_reason, evidence
                     )
                     VALUES(
-                      :run_id::uuid, :scenario_id, :criterion_id, 'coverage', :status, :score_vector,
-                      :verifier_used, :verifier_reason, :evidence::jsonb
+                      CAST(:run_id AS uuid), :scenario_id, :criterion_id, 'coverage', :status, :score_vector,
+                      :verifier_used, :verifier_reason, CAST(:evidence AS jsonb)
                     )
                     ON CONFLICT (run_id, scenario_id, criterion_id)
                     DO UPDATE SET
@@ -161,8 +161,8 @@ def _run_review_job(job_id: str, run_id: str, payload_dict: Dict[str, Any]) -> N
                       issues, llm_used, llm_suggestions
                     )
                     VALUES(
-                      :run_id::uuid, :scenario_id, :c, :s, :e,
-                      :issues::jsonb, :llm_used, :llm_suggestions::jsonb
+                      CAST(:run_id AS uuid), :scenario_id, :c, :s, :e,
+                      CAST(:issues AS jsonb), :llm_used, CAST(:llm_suggestions AS jsonb)
                     )
                     ON CONFLICT (run_id, scenario_id)
                     DO UPDATE SET
@@ -215,7 +215,7 @@ def _run_review_job(job_id: str, run_id: str, payload_dict: Dict[str, Any]) -> N
                     FROM coverage_platform.requirements_criteria c
                     JOIN coverage_platform.kb_links l
                       ON l.criterion_id = c.criterion_id
-                    WHERE l.run_id = :run_id::uuid
+                    WHERE l.run_id = CAST(:run_id AS uuid)
                       AND l.status = 'covered'
                       AND c.is_active = true
                     """
@@ -250,7 +250,7 @@ def _run_review_job(job_id: str, run_id: str, payload_dict: Dict[str, Any]) -> N
                         FROM coverage_platform.requirements_criteria c
                         JOIN coverage_platform.kb_links l
                           ON l.criterion_id = c.criterion_id
-                        WHERE l.run_id = :run_id::uuid
+                        WHERE l.run_id = CAST(:run_id AS uuid)
                           AND l.status = 'covered'
                           AND c.is_active = true
                           AND c.path = :path
@@ -276,7 +276,7 @@ def _run_review_job(job_id: str, run_id: str, payload_dict: Dict[str, Any]) -> N
                     SELECT title, path, notes, context_text
                     FROM coverage_platform.tests_scenarios
                     WHERE scenario_id IN (
-                      SELECT DISTINCT scenario_id FROM coverage_platform.kb_links WHERE run_id = :run_id::uuid
+                      SELECT DISTINCT scenario_id FROM coverage_platform.kb_links WHERE run_id = CAST(:run_id AS uuid)
                     )
                     """
                 ),
@@ -305,7 +305,7 @@ def _run_review_job(job_id: str, run_id: str, payload_dict: Dict[str, Any]) -> N
                   run_id, total_criteria, covered_criteria, coverage_rate, module_breakdown, diversity_breakdown
                 )
                 VALUES(
-                  :run_id::uuid, :total, :covered, :rate, :modules::jsonb, :diversity::jsonb
+                  CAST(:run_id AS uuid), :total, :covered, :rate, CAST(:modules AS jsonb), CAST(:diversity AS jsonb)
                 )
                 ON CONFLICT (run_id)
                 DO UPDATE SET
@@ -327,7 +327,7 @@ def _run_review_job(job_id: str, run_id: str, payload_dict: Dict[str, Any]) -> N
         )
 
         db.execute(
-            text("UPDATE coverage_platform.review_runs SET status='done', finished_at=now() WHERE run_id=:id::uuid"),
+            text("UPDATE coverage_platform.review_runs SET status='done', finished_at=now() WHERE run_id=CAST(:id AS uuid)"),
             {"id": run_id},
         )
         db.commit()
@@ -351,7 +351,7 @@ def _run_review_job(job_id: str, run_id: str, payload_dict: Dict[str, Any]) -> N
         try:
             db.execute(
                 text(
-                    "UPDATE coverage_platform.review_runs SET status='failed', finished_at=now() WHERE run_id=:id::uuid"
+                    "UPDATE coverage_platform.review_runs SET status='failed', finished_at=now() WHERE run_id=CAST(:id AS uuid)"
                 ),
                 {"id": run_id},
             )
@@ -403,7 +403,7 @@ def get_summary(run_id: str, db: Session = Depends(db_session)):
             """
             SELECT total_criteria, covered_criteria, coverage_rate, module_breakdown, diversity_breakdown
             FROM coverage_platform.review_summary
-            WHERE run_id = :id::uuid
+            WHERE run_id = CAST(:id AS uuid)
             """
         ),
         {"id": run_id},
@@ -442,7 +442,7 @@ def get_summary(run_id: str, db: Session = Depends(db_session)):
               AVG(consistency_score) AS avg_s,
               AVG(executable_score) AS avg_e
             FROM coverage_platform.quality_review_items
-            WHERE run_id = :id::uuid
+            WHERE run_id = CAST(:id AS uuid)
             """
         ),
         {"id": run_id},
@@ -459,7 +459,7 @@ def get_summary(run_id: str, db: Session = Depends(db_session)):
             """
             SELECT issues
             FROM coverage_platform.quality_review_items
-            WHERE run_id = :id::uuid
+            WHERE run_id = CAST(:id AS uuid)
             """
         ),
         {"id": run_id},
@@ -495,7 +495,7 @@ def list_gaps(run_id: str, payload: GapsRequest, db: Session = Depends(db_sessio
                 WHERE c.is_active = true
                   AND NOT EXISTS (
                     SELECT 1 FROM coverage_platform.kb_links l
-                    WHERE l.run_id = :rid::uuid AND l.criterion_id = c.criterion_id AND l.status = 'covered'
+                    WHERE l.run_id = CAST(:rid AS uuid) AND l.criterion_id = c.criterion_id AND l.status = 'covered'
                   )
                 """
             ),
@@ -512,7 +512,7 @@ def list_gaps(run_id: str, payload: GapsRequest, db: Session = Depends(db_sessio
             WHERE c.is_active = true
               AND NOT EXISTS (
                 SELECT 1 FROM coverage_platform.kb_links l
-                WHERE l.run_id = :rid::uuid AND l.criterion_id = c.criterion_id AND l.status = 'covered'
+                WHERE l.run_id = CAST(:rid AS uuid) AND l.criterion_id = c.criterion_id AND l.status = 'covered'
               )
             ORDER BY c.page_id, c.table_idx, c.row_idx
             LIMIT :limit OFFSET :offset
@@ -556,7 +556,7 @@ def list_gaps(run_id: str, payload: GapsRequest, db: Session = Depends(db_sessio
 
 @router.get("/reviews/runs/{run_id}/scenarios/{scenario_id}/links", response_model=LinksResponse)
 def list_scenario_links(run_id: str, scenario_id: str, status: str | None = None, db: Session = Depends(db_session)):
-    cond = "WHERE run_id = :rid::uuid AND scenario_id = :sid"
+    cond = "WHERE run_id = CAST(:rid AS uuid) AND scenario_id = :sid"
     params = {"rid": run_id, "sid": scenario_id}
     if status:
         cond += " AND status = :status"
@@ -597,7 +597,7 @@ def list_scenario_links(run_id: str, scenario_id: str, status: str | None = None
 
 @router.get("/reviews/runs/{run_id}/criteria/{criterion_id}/links", response_model=LinksResponse)
 def list_criterion_links(run_id: str, criterion_id: str, status: str | None = None, db: Session = Depends(db_session)):
-    cond = "WHERE run_id = :rid::uuid AND criterion_id = :cid"
+    cond = "WHERE run_id = CAST(:rid AS uuid) AND criterion_id = :cid"
     params = {"rid": run_id, "cid": criterion_id}
     if status:
         cond += " AND status = :status"
@@ -640,7 +640,7 @@ def list_criterion_links(run_id: str, criterion_id: str, status: str | None = No
 def list_quality_issues(run_id: str, payload: QualityIssuesRequest, db: Session = Depends(db_session)):
     offset = (payload.page - 1) * payload.page_size
 
-    where = "WHERE run_id = :rid::uuid"
+    where = "WHERE run_id = CAST(:rid AS uuid)"
     params: Dict[str, Any] = {"rid": run_id, "limit": payload.page_size, "offset": offset}
 
     if payload.filters:

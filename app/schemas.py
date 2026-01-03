@@ -95,6 +95,7 @@ class RequirementCriterion(BaseModel):
     row: Dict[str, Any]
     normalized_text: str
     is_active: bool = True
+    feature_points: str = ""  # LLM 提取的需求点/功能点（Markdown 格式）
 
 
 class RequirementsSearchItem(BaseModel):
@@ -313,3 +314,182 @@ class LlmSettingsRequest(BaseModel):
     base_url: Optional[str] = None
     model_verifier: str = "gpt-4o-mini"
     model_quality: str = "gpt-4o-mini"
+
+
+# ==================== 公共测试标准管理 ====================
+
+
+class PublicCriterionBase(BaseModel):
+    """公共测试标准基础字段"""
+    category: str = Field(description="测试类型（增删改、审核、查询、校验、导入、数值等）")
+    test_point: str = Field(description="测试点名称")
+    test_content: Optional[str] = Field(default=None, description="测试内容描述")
+
+
+class PublicCriterionCreate(PublicCriterionBase):
+    """创建公共测试标准请求"""
+    pass
+
+
+class PublicCriterionUpdate(BaseModel):
+    """更新公共测试标准请求"""
+    category: Optional[str] = None
+    test_point: Optional[str] = None
+    test_content: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class PublicCriterion(PublicCriterionBase):
+    """公共测试标准响应"""
+    criterion_id: str
+    keywords: List[str] = Field(default_factory=list)
+    is_active: bool = True
+    created_at: str
+    updated_at: str
+
+
+class PublicCriteriaListResponse(BaseModel):
+    """公共测试标准列表响应"""
+    items: List[PublicCriterion]
+    total: int
+
+
+class PublicCriteriaImportRequest(BaseModel):
+    """从 Markdown 导入公共测试标准"""
+    content: str = Field(description="Markdown 文件内容（表格格式）")
+    replace_all: bool = Field(default=False, description="是否替换全部现有数据")
+
+
+class PublicCriteriaImportResponse(BaseModel):
+    """导入结果响应"""
+    imported: int = Field(description="成功导入的条数")
+    updated: int = Field(description="更新的条数")
+    skipped: int = Field(description="跳过的条数")
+    errors: List[str] = Field(default_factory=list, description="错误信息列表")
+
+
+class PublicCriteriaIndexResponse(BaseModel):
+    """索引重建响应"""
+    indexed: int = Field(description="已索引条数")
+    failed: int = Field(description="失败条数")
+
+
+# ==================== 覆盖度分析 ====================
+
+
+class LLMEnhanceConfig(BaseModel):
+    """LLM 增强配置"""
+    enable_boundary_verify: bool = Field(default=True, description="启用边界匹配 LLM 验证（0.65~0.80 分数段）")
+    enable_miss_suggestion: bool = Field(default=True, description="启用未覆盖项智能建议")
+    enable_requirements_context: bool = Field(default=True, description="启用需求文档上下文增强")
+    max_verify_count: int = Field(default=20, ge=1, le=100, description="每次分析最多 LLM 验证次数")
+    max_suggestion_count: int = Field(default=10, ge=1, le=50, description="最多生成建议的未覆盖项数量")
+
+
+class CoverageAnalysisConfigSchema(BaseModel):
+    """覆盖度分析配置"""
+    threshold_cover: float = Field(default=0.80, ge=0.5, le=1.0, description="覆盖阈值")
+    threshold_partial: float = Field(default=0.65, ge=0.3, le=1.0, description="部分覆盖阈值（触发 LLM 验证）")
+    enable_dynamic_threshold: bool = Field(default=True, description="启用多级阈值（根据文本长度动态调整）")
+    embedding_weight: float = Field(default=0.7, ge=0.0, le=1.0, description="Embedding 相似度权重")
+    keyword_weight: float = Field(default=0.3, ge=0.0, le=1.0, description="关键词命中权重")
+    categories: Optional[List[str]] = Field(default=None, description="限定分析的类型（为空则分析全部）")
+    llm: Optional[LLMEnhanceConfig] = Field(default=None, description="LLM 增强配置（为空则不启用 LLM）")
+
+
+class CoverageAnalyzeRequest(BaseModel):
+    """发起覆盖度分析请求"""
+    xmind_source_id: str = Field(description="XMind 来源 ID")
+    requirements_page_ids: Optional[List[str]] = Field(default=None, description="关联的需求页面 ID 列表（可选）")
+    config: Optional[CoverageAnalysisConfigSchema] = Field(default=None, description="分析配置")
+
+
+class MatchedScenario(BaseModel):
+    """匹配的测试场景"""
+    scenario_id: str
+    title: str
+    path: str
+    score: float
+    matched_keywords: List[str] = Field(default_factory=list)
+
+
+class MatchedRequirement(BaseModel):
+    """匹配的需求点"""
+    page_id: str
+    page_title: str
+    text: str
+    score: float
+
+
+class CoverageResultItem(BaseModel):
+    """单个公共标准的覆盖结果"""
+    criterion_id: str
+    category: str
+    test_point: str
+    test_content: Optional[str]
+    status: Literal["covered", "partial", "missed"]
+    best_score: float
+    matched_keywords: List[str] = Field(default_factory=list)
+    matched_scenarios: List[MatchedScenario] = Field(default_factory=list)
+    matched_requirements: List[MatchedRequirement] = Field(default_factory=list)
+    llm_verified: bool = False
+    llm_reason: Optional[str] = None
+    llm_suggestion: Optional[str] = None
+
+
+class CategoryCoverageStats(BaseModel):
+    """按类型分组的覆盖统计"""
+    category: str
+    total: int
+    covered: int
+    partial: int
+    missed: int
+    coverage_rate: float = Field(description="覆盖率百分比，如 72.5")
+
+
+class CoverageAnalysisSummary(BaseModel):
+    """覆盖度分析汇总"""
+    total_criteria: int
+    covered: int
+    partial: int
+    missed: int
+    coverage_rate: float = Field(description="总体覆盖率百分比")
+    by_category: List[CategoryCoverageStats] = Field(default_factory=list, description="按类型分组统计")
+    requirements_linked: int = Field(default=0, description="有需求关联的测试点数量")
+    llm_verified_count: int = Field(default=0, description="LLM 参与验证的数量")
+    llm_suggestion_count: int = Field(default=0, description="生成了建议的未覆盖项数量")
+
+
+class CoverageAnalysisResponse(BaseModel):
+    """覆盖度分析结果响应"""
+    run_id: str
+    status: Literal["pending", "running", "completed", "failed"]
+    xmind_source_id: str
+    xmind_source_name: str
+    requirements_pages: List[Dict[str, Any]] = Field(default_factory=list, description="关联的需求页面信息")
+    config: Dict[str, Any] = Field(default_factory=dict)
+    summary: Optional[CoverageAnalysisSummary] = None
+    covered_items: List[CoverageResultItem] = Field(default_factory=list)
+    partial_items: List[CoverageResultItem] = Field(default_factory=list)
+    missed_items: List[CoverageResultItem] = Field(default_factory=list)
+    created_at: str
+    finished_at: Optional[str] = None
+
+
+class CoverageRunListItem(BaseModel):
+    """覆盖度分析历史列表项"""
+    run_id: str
+    xmind_source_id: str
+    xmind_source_name: str
+    status: str
+    coverage_rate: Optional[float] = None
+    total_criteria: Optional[int] = None
+    created_at: str
+    finished_at: Optional[str] = None
+
+
+class CoverageRunListResponse(BaseModel):
+    """覆盖度分析历史列表响应"""
+    items: List[CoverageRunListItem]
+    total: int
+
