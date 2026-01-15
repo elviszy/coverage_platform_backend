@@ -21,7 +21,7 @@ class Settings(BaseSettings):
 
     # 数据库
     # 环境变量：DATABASE_URL
-    database_url: str = "postgresql+psycopg://postgres:postgres@127.0.0.1:5432/coverage_platform"
+    database_url: str = "postgresql+psycopg://postgres:postgres@10.6.5.201:5432/coverage_platform"
 
     # 向量配置
     # 环境变量：EMBEDDING_DIM
@@ -29,26 +29,26 @@ class Settings(BaseSettings):
 
     # OpenAI
     # 环境变量：OPENAI_API_KEY / OPENAI_BASE_URL
-    openai_api_key: Optional[str] = "sk-cjbdj1lb6rb4pe1gioqafqcnntl3fi0rzzdmbfsj2t7jvzc4"
-    openai_base_url: Optional[str] = "https://api.xiaomimomo.com/v1"
+    openai_api_key: Optional[str] = ""
+    openai_base_url: Optional[str] = "https://api.xiaomimimo.com/v1"
     openai_model_verifier: str = "mimo-v2-flash"
     openai_model_quality: str = "mimo-v2-flash"
     
     # Embedding API（可独立配置，不配置则使用 OpenAI 配置）
     # 环境变量：EMBEDDING_API_KEY / EMBEDDING_BASE_URL / EMBEDDING_MODEL
-    embedding_api_key: Optional[str] = "sk-80019b2fe639400faefb76316c11cd0c"  # 不设置则使用 openai_api_key
+    embedding_api_key: Optional[str] = ""  # 不设置则使用 openai_api_key
     embedding_base_url: Optional[str] = "https://dashscope.aliyuncs.com/compatible-mode/v1"  # 不设置则使用 openai_base_url
     embedding_model: Optional[str] = "text-embedding-v4"  # 阿里云 DashScope embedding 模型
     
     # 功能点提取 LLM 配置（独立配置，不受环境变量影响）
-    feature_extractor_api_key: str = "sk-cjbdj1lb6rb4pe1gioqafqcnntl3fi0rzzdmbfsj2t7jvzc4"
-    feature_extractor_base_url: str = "https://api.xiaomimomo.com/v1"
+    feature_extractor_api_key: str = ""
+    feature_extractor_base_url: str = "https://api.xiaomimimo.com/v1"
     feature_extractor_model: str = "mimo-v2-flash"
 
     # Confluence Data Center
     # 环境变量：CONFLUENCE_BASE_URL / CONFLUENCE_TOKEN
     confluence_base_url: str = ""
-    confluence_token: Optional[str] = None
+    confluence_token: Optional[str] = ""
 
     # 默认开关（每次评审 run 仍可覆盖）
     enable_llm_verifier_default: bool = False

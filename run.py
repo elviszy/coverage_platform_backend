@@ -10,21 +10,59 @@
 """
 from __future__ import annotations
 
+# 抑制 pkg_resources 弃用警告 (来自 jieba 库)
+import warnings
+warnings.filterwarnings("ignore", message="pkg_resources is deprecated")
+
 import argparse
 import logging
+import os
 import sys
+from logging.handlers import TimedRotatingFileHandler
+from pathlib import Path
 
 import uvicorn
 
 
 def setup_logging(debug: bool = True):
-    """配置日志"""
+    """配置日志
+    
+    日志同时输出到控制台和文件，文件按天滚动保留7天
+    """
     log_level = logging.DEBUG if debug else logging.INFO
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
+    log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    date_format = "%Y-%m-%d %H:%M:%S"
+    
+    # 创建 log 目录
+    log_dir = Path(__file__).parent / "log"
+    log_dir.mkdir(exist_ok=True)
+    
+    # 获取根日志记录器
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+    
+    # 清除已有的处理器
+    root_logger.handlers.clear()
+    
+    # 控制台处理器
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(log_level)
+    console_handler.setFormatter(logging.Formatter(log_format, date_format))
+    root_logger.addHandler(console_handler)
+    
+    # 文件处理器 - 按天滚动
+    log_file = log_dir / "app.log"
+    file_handler = TimedRotatingFileHandler(
+        filename=str(log_file),
+        when="midnight",      # 每天午夜滚动
+        interval=1,           # 每1天
+        backupCount=7,        # 保留7天的日志
+        encoding="utf-8",
     )
+    file_handler.suffix = "%Y-%m-%d"  # 备份文件后缀格式
+    file_handler.setLevel(log_level)
+    file_handler.setFormatter(logging.Formatter(log_format, date_format))
+    root_logger.addHandler(file_handler)
 
 
 def main():

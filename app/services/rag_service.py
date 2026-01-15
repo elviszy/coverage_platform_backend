@@ -77,8 +77,8 @@ class RAGService:
                 # 使用 PostgreSQL 存储
                 from lightrag import LightRAG
                 
-                # 解析数据库连接信息
-                db_config = self._parse_database_url()
+                # 设置数据库环境变量（LightRAG 通过环境变量读取 PostgreSQL 配置）
+                self._parse_database_url()
                 
                 self._lightrag = LightRAG(
                     working_dir=settings.rag_working_dir,
@@ -89,8 +89,6 @@ class RAGService:
                     vector_storage="PGVectorStorage",
                     graph_storage="PGGraphStorage",
                     doc_status_storage="PGDocStatusStorage",
-                    # 数据库连接参数
-                    **db_config,
                 )
                 
                 # 初始化存储
@@ -120,7 +118,15 @@ class RAGService:
             return False
 
     def _parse_database_url(self) -> Dict[str, Any]:
-        """解析数据库 URL 为 LightRAG 配置参数"""
+        """解析数据库 URL 并设置 LightRAG 所需的环境变量
+        
+        LightRAG 通过环境变量读取 PostgreSQL 配置：
+        - POSTGRES_HOST
+        - POSTGRES_PORT
+        - POSTGRES_USER
+        - POSTGRES_PASSWORD
+        - POSTGRES_DATABASE
+        """
         # 格式: postgresql+psycopg://user:password@host:port/database
         url = settings.database_url
         
@@ -146,13 +152,20 @@ class RAGService:
             hostport, database = hostpart, "coverage_platform"
         
         if ":" in hostport:
-            host, port = hostport.split(":", 1)
-            port = int(port)
+            host, port_str = hostport.split(":", 1)
+            port = int(port_str)
         else:
             host, port = hostport, 5432
         
+        # 设置 LightRAG 需要的环境变量
+        os.environ["POSTGRES_HOST"] = host
+        os.environ["POSTGRES_PORT"] = str(port)
+        os.environ["POSTGRES_USER"] = user
+        os.environ["POSTGRES_PASSWORD"] = password
+        os.environ["POSTGRES_DATABASE"] = database
+        
+        # 返回额外的 kwargs（不再包含 pg_url）
         return {
-            "pg_url": f"postgresql://{user}:{password}@{host}:{port}/{database}",
             "embedding_dim": settings.embedding_dim,
         }
 

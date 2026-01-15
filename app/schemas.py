@@ -80,6 +80,7 @@ class RequirementsSearchRequest(BaseModel):
     query_text: str
     top_k: int = Field(default=20, ge=1, le=200)
     filters: Optional[RequirementsSearchFilters] = None
+    use_llm_refinement: bool = Field(default=False, description="是否使用 LLM 精确定位需求点")
 
 
 class RequirementCriterion(BaseModel):

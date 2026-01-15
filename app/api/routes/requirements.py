@@ -394,7 +394,8 @@ def _run_confluence_import_job(job_id: str, payload: dict) -> None:
                                     await rag_service.initialize()
                                     await rag_service.process_attachment(str(file_path))
                                 
-                                asyncio.get_event_loop().run_until_complete(process_att())
+                                # 使用 asyncio.run() 在后台线程中创建新的事件循环
+                                asyncio.run(process_att())
                             except Exception as rag_err:
                                 # RAG 处理失败不影响主导入流程
                                 print(f"[confluence_import] RAG 附件处理警告: {rag_err}")
@@ -654,7 +655,8 @@ def _run_requirements_index_job(job_id: str, payload: dict) -> None:
                         }
                     )
             
-            asyncio.get_event_loop().run_until_complete(sync_to_rag())
+            # 使用 asyncio.run() 在后台线程中创建新的事件循环
+            asyncio.run(sync_to_rag())
         except Exception as rag_err:
             # RAG 同步失败不影响主流程
             print(f"[requirements/index] RAG 同步警告: {rag_err}")
