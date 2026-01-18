@@ -29,21 +29,22 @@ class Settings(BaseSettings):
 
     # OpenAI
     # 环境变量：OPENAI_API_KEY / OPENAI_BASE_URL
-    openai_api_key: Optional[str] = ""
-    openai_base_url: Optional[str] = "https://api.xiaomimimo.com/v1"
-    openai_model_verifier: str = "mimo-v2-flash"
-    openai_model_quality: str = "mimo-v2-flash"
+    openai_api_key: Optional[str] = ""  # 必须通过环境变量配置
+    openai_base_url: Optional[str] = ""  # 必须通过环境变量配置
+    openai_model_verifier: str = "gpt-4o"  # LLM 验证模型
+    openai_model_quality: str = "gpt-4o"  # 质量评审模型
     
     # Embedding API（可独立配置，不配置则使用 OpenAI 配置）
     # 环境变量：EMBEDDING_API_KEY / EMBEDDING_BASE_URL / EMBEDDING_MODEL
     embedding_api_key: Optional[str] = ""  # 不设置则使用 openai_api_key
-    embedding_base_url: Optional[str] = "https://dashscope.aliyuncs.com/compatible-mode/v1"  # 不设置则使用 openai_base_url
-    embedding_model: Optional[str] = "text-embedding-v4"  # 阿里云 DashScope embedding 模型
+    embedding_base_url: Optional[str] = ""  # 不设置则使用 openai_base_url
+    embedding_model: Optional[str] = "text-embedding-3-small"  # Embedding 模型
     
-    # 功能点提取 LLM 配置（独立配置，不受环境变量影响）
-    feature_extractor_api_key: str = ""
-    feature_extractor_base_url: str = "https://api.xiaomimimo.com/v1"
-    feature_extractor_model: str = "mimo-v2-flash"
+    # 功能点提取 LLM 配置
+    # 环境变量：FEATURE_EXTRACTOR_API_KEY / FEATURE_EXTRACTOR_BASE_URL / FEATURE_EXTRACTOR_MODEL
+    feature_extractor_api_key: str = ""  # 不设置则使用 openai_api_key
+    feature_extractor_base_url: str = ""  # 不设置则使用 openai_base_url
+    feature_extractor_model: str = "gpt-4o"  # 功能点提取模型
 
     # Confluence Data Center
     # 环境变量：CONFLUENCE_BASE_URL / CONFLUENCE_TOKEN
